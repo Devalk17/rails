@@ -2,7 +2,9 @@
 
 require "active_support/core_ext/object/try"
 require "active_support/core_ext/kernel/singleton_class"
+require "active_support/deprecation"
 require "thread"
+require "delegate"
 
 module ActionView
   # = Action View Template
@@ -160,23 +162,19 @@ module ActionView
         compile!(view)
         view.run(method_name, locals, buffer, &block)
       end
-    rescue => e
-      handle_render_error(view, e)
+    rescue Template::Error => e
+      e.sub_template_of(self)
+      raise e
+    rescue
+      encode!
+      raise Template::Error.new(self)
     end
 
     def type
       @type ||= Types[@formats.first] if @formats.first
     end
 
-    # Receives a view object and return a template similar to self by using @virtual_path.
-    #
-    # This method is useful if you have a template object but it does not contain its source
-    # anymore since it was already compiled. In such cases, all you need to do is to call
-    # refresh passing in the view object.
-    #
-    # Notice this method raises an error if the template to be refreshed does not have a
-    # virtual path set (true just for inline templates).
-    def refresh(view)
+    deprecate def refresh(view) # :nodoc:
       raise "A template needs to have a virtual path in order to be refreshed" unless @virtual_path
       lookup  = view.lookup_context
       pieces  = @virtual_path.split("/")
@@ -272,10 +270,16 @@ module ActionView
             compile(mod)
           end
 
-          # Just discard the source if we have a virtual path. This
-          # means we can get the template back.
-          @source = nil if @virtual_path
           @compiled = true
+        end
+      end
+
+      class LegacyTemplate < DelegateClass(Template) # :nodoc:
+        attr_reader :source
+
+        def initialize(template, source)
+          super(template)
+          @source = source
         end
       end
 
@@ -293,7 +297,7 @@ module ActionView
       # regardless of the original source encoding.
       def compile(mod)
         source = encode!
-        code = @handler.call(self)
+        code = @handler.call(LegacyTemplate.new(self, source))
 
         # Make sure that the resulting String to be eval'd is in the
         # encoding of the code
@@ -320,20 +324,6 @@ module ActionView
         mod.module_eval(source, identifier, 0)
         if finalize_compiled_template_methods
           ObjectSpace.define_finalizer(self, Finalizer[method_name, mod])
-        end
-      end
-
-      def handle_render_error(view, e)
-        if e.is_a?(Template::Error)
-          e.sub_template_of(self)
-          raise e
-        else
-          template = self
-          unless template.source
-            template = refresh(view)
-            template.encode!
-          end
-          raise Template::Error.new(template)
         end
       end
 

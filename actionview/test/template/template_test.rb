@@ -121,7 +121,9 @@ class TestERBTemplate < ActiveSupport::TestCase
     @template = new_template("Hello", virtual_path: "test/foo/bar")
     @template.locals = [:key]
     assert_called_with(@context.lookup_context, :find_template, ["bar", %w(test/foo), false, [:key]], returns: "template") do
-      assert_equal "template", @template.refresh(@context)
+      assert_deprecated do
+        assert_equal "template", @template.refresh(@context)
+      end
     end
   end
 
@@ -129,14 +131,18 @@ class TestERBTemplate < ActiveSupport::TestCase
     @template = new_template("Hello", virtual_path: "test/_foo")
     @template.locals = [:key]
     assert_called_with(@context.lookup_context, :find_template, ["foo", %w(test), true, [:key]], returns: "partial") do
-      assert_equal "partial", @template.refresh(@context)
+      assert_deprecated do
+        assert_equal "partial", @template.refresh(@context)
+      end
     end
   end
 
   def test_refresh_raises_an_error_without_virtual_path
     @template = new_template("Hello", virtual_path: nil)
     assert_raise RuntimeError do
-      @template.refresh(@context)
+      assert_deprecated do
+        @template.refresh(@context)
+      end
     end
   end
 
